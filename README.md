@@ -11,7 +11,7 @@ Tested on Python 3.6, Tensorflow 2.0 alpha on Ubuntu 16.04.
 - [ ] Training pipeline
 - [ ] More backends
 
-## Referece
+## Reference
 [Paweł Kapica
 ](https://github.com/mystic123/tensorflow-yolo-v3) and his [post](https://itnext.io/implementing-yolo-v3-in-tensorflow-tf-slim-c3c55ff59dbe)
 
