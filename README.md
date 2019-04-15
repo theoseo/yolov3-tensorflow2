@@ -5,6 +5,7 @@ Implementation of YOLO v3 object detector in Tensorflow 2.0 (Keras). This code i
 Tested on Python 3.6, Tensorflow 2.0 alpha on Ubuntu 16.04.
 
 ## Todo list:
+- [x] Darknet53 architecture and Test
 - [x] YOLO v3 architecture
 - [ ] Basic working demo
 - [ ] Weights converter (util for exporting loaded COCO weights as TF checkpoint)

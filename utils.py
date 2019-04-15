@@ -59,52 +59,62 @@ def freeze_graph(sess, output_graph):
     print("{} ops written to {}.".format(len(output_graph_def.node), output_graph))
 
 
-def load_weights(var_list, weights_file):
+def load_weights(model, weights_file):
     """
     Loads and converts pre-trained weights.
-    :param var_list: list of network variables.
+    :param model: Keras model
     :param weights_file: name of the binary file.
-    :return: list of assign ops
+    :return total_params: if load successfully end else -1
     """
                                
     with open(weights_file, "rb") as fp:
         _ = np.fromfile(fp, dtype=np.int32, count=5)
 
         weights = np.fromfile(fp, dtype=np.float32)
-    
-    print(weights.shape)
 
     ptr = 0
     i = 0
     total_params = 0
-    assign_ops = []
+
+    var_list = model.variables
+    
     var_name_list = ['/'.join(x.name.split('/')[:-1]) for x in var_list]
-    while i < len(var_list) - 145:
+
+    print(weights.shape)
+    print(len(model.variables))
+    print(len(model.trainable_variables))
+
+    while i < len(model.trainable_variables):
         var1 = var_list[i]
         var2 = var_list[i + 1]
-        # do something only if we process conv layer
 
+        print("%d - var1 : %s (%s)" %(i, var1.name.split('/')[-2], var1.name.split('/')[-1]))
+        print("%d - var2 : %s (%s)" %(i, var2.name.split('/')[-2], var2.name.split('/')[-1]))        
+        
+        # do something only if we process conv layer        
         if 'conv2' in var1.name.split('/')[-2]:
             # check type of next layer
-            print("%d - var1 : %s" %(i, var1.name.split('/')[-2]))
             if 'batch_normalization' in var2.name.split('/')[-2]:
-                print("%d - var2 : %s" %(i, var2.name.split('/')[-2]))
-                # load batch norm params
+                
+                # load batch norm's gamma and beta params
+                # beta bias
+                # gamma kernel                
                 gamma, beta = var_list[i + 1:i + 3]
+                
+                # Find mean and variance of the same name  
                 layer_name = '/'.join(gamma.name.split('/')[:-1])
                 mean_index = i + 3
                 mean_index += var_name_list[i+3:].index(layer_name)
                 mean, var = var_list[mean_index:mean_index+2] 
 
                 batch_norm_vars = [beta, gamma, mean, var]
+                
                 for batch_norm_var in batch_norm_vars:
                     shape = batch_norm_var.shape.as_list()
                     num_params = np.prod(shape)
                     batch_norm_var_weights = weights[ptr:ptr + num_params].reshape(shape)
                     ptr += num_params
-
-                    print(batch_norm_var.shape)
-                    print(batch_norm_var_weights.shape)                    
+                  
                     batch_norm_var.assign(batch_norm_var_weights, name=batch_norm_var.name)
                     #assign_ops.append(
                     #    tf.compat.v1.assign(var, var_weights, validate_shape=True))
@@ -120,11 +130,8 @@ def load_weights(var_list, weights_file):
                 bias_weights = weights[ptr:ptr +
                                        bias_params].reshape(bias_shape)
                 ptr += bias_params
-                print(bias.shape)
-                print(bias_weights.shape)
+
                 bias.assign(bias_weights, name=bias.name)
-                #assign_ops.append(
-                #    tf.compat.v1.assign(bias, bias_weights, validate_shape=True))
 
                 # we loaded 1 variable
                 i += 1
@@ -137,14 +144,12 @@ def load_weights(var_list, weights_file):
             # remember to transpose to column-major
             var_weights = np.transpose(var_weights, (2, 3, 1, 0))
             ptr += num_params
-            print(var1.shape)
-            print(var_weights.shape)               
             var1.assign(var_weights, name=var1.name)
-            #assign_ops.append(
-            #    tf.compat.v1.assign(var1, var_weights, validate_shape=True))
             i += 1
-
-    return assign_ops
+            
+        total_params = ptr
+            
+    return total_params if total_params == weights.shape else -1
 
 
 def detections_boxes(detections):
