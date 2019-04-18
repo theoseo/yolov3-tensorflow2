@@ -2,62 +2,8 @@
 
 import numpy as np
 import tensorflow as tf
-from PIL import ImageDraw, Image
-
-
-def get_boxes_and_inputs_pb(frozen_graph):
-
-    with frozen_graph.as_default():
-        boxes = tf.get_default_graph().get_tensor_by_name("output_boxes:0")
-        inputs = tf.get_default_graph().get_tensor_by_name("inputs:0")
-
-    return boxes, inputs
-
-
-def get_boxes_and_inputs(model, num_classes, size, data_format):
-
-    inputs = tf.placeholder(tf.float32, [1, size, size, 3])
-
-    with tf.variable_scope('detector'):
-        detections = model(inputs, num_classes,
-                           data_format=data_format)
-
-    boxes = detections_boxes(detections)
-
-    return boxes, inputs
-
-
-def load_graph(frozen_graph_filename):
-
-    with tf.gfile.GFile(frozen_graph_filename, "rb") as f:
-        graph_def = tf.GraphDef()
-        graph_def.ParseFromString(f.read())
-
-    with tf.Graph().as_default() as graph:
-        tf.import_graph_def(graph_def, name="")
-
-    return graph
-
-
-def freeze_graph(sess, output_graph):
-
-    output_node_names = [
-        "output_boxes",
-        "inputs",
-    ]
-    output_node_names = ",".join(output_node_names)
-
-    output_graph_def = tf.graph_util.convert_variables_to_constants(
-        sess,
-        tf.get_default_graph().as_graph_def(),
-        output_node_names.split(",")
-    )
-
-    with tf.gfile.GFile(output_graph, "wb") as f:
-        f.write(output_graph_def.SerializeToString())
-
-    print("{} ops written to {}.".format(len(output_graph_def.node), output_graph))
-
+from PIL import  ImageDraw, Image
+import colorsys
 
 def load_weights(model, weights_file):
     """
@@ -116,8 +62,6 @@ def load_weights(model, weights_file):
                     ptr += num_params
                   
                     batch_norm_var.assign(batch_norm_var_weights, name=batch_norm_var.name)
-                    #assign_ops.append(
-                    #    tf.compat.v1.assign(var, var_weights, validate_shape=True))
 
                 # we move the pointer by 4, because we loaded 4 variables
                 i += 2
@@ -152,101 +96,6 @@ def load_weights(model, weights_file):
     return total_params if total_params == weights.shape else -1
 
 
-def detections_boxes(detections):
-    """
-    Converts center x, center y, width and height values to coordinates of top left and bottom right points.
-
-    :param detections: outputs of YOLO v3 detector of shape (?, 10647, (num_classes + 5))
-    :return: converted detections of same shape as input
-    """
-    center_x, center_y, width, height, attrs = tf.split(
-        detections, [1, 1, 1, 1, -1], axis=-1)
-    w2 = width / 2
-    h2 = height / 2
-    x0 = center_x - w2
-    y0 = center_y - h2
-    x1 = center_x + w2
-    y1 = center_y + h2
-
-    boxes = tf.concat([x0, y0, x1, y1], axis=-1)
-    detections = tf.concat([boxes, attrs], axis=-1, name="output_boxes")
-    return detections
-
-
-def _iou(box1, box2):
-    """
-    Computes Intersection over Union value for 2 bounding boxes
-
-    :param box1: array of 4 values (top left and bottom right coords): [x0, y0, x1, x2]
-    :param box2: same as box1
-    :return: IoU
-    """
-    b1_x0, b1_y0, b1_x1, b1_y1 = box1
-    b2_x0, b2_y0, b2_x1, b2_y1 = box2
-
-    int_x0 = max(b1_x0, b2_x0)
-    int_y0 = max(b1_y0, b2_y0)
-    int_x1 = min(b1_x1, b2_x1)
-    int_y1 = min(b1_y1, b2_y1)
-
-    int_area = (int_x1 - int_x0) * (int_y1 - int_y0)
-
-    b1_area = (b1_x1 - b1_x0) * (b1_y1 - b1_y0)
-    b2_area = (b2_x1 - b2_x0) * (b2_y1 - b2_y0)
-
-    # we add small epsilon of 1e-05 to avoid division by 0
-    iou = int_area / (b1_area + b2_area - int_area + 1e-05)
-    return iou
-
-
-def non_max_suppression(predictions_with_boxes, confidence_threshold, iou_threshold=0.4):
-    """
-    Applies Non-max suppression to prediction boxes.
-
-    :param predictions_with_boxes: 3D numpy array, first 4 values in 3rd dimension are bbox attrs, 5th is confidence
-    :param confidence_threshold: the threshold for deciding if prediction is valid
-    :param iou_threshold: the threshold for deciding if two boxes overlap
-    :return: dict: class -> [(box, score)]
-    """
-    conf_mask = np.expand_dims(
-        (predictions_with_boxes[:, :, 4] > confidence_threshold), -1)
-    predictions = predictions_with_boxes * conf_mask
-
-    result = {}
-    for i, image_pred in enumerate(predictions):
-        shape = image_pred.shape
-        non_zero_idxs = np.nonzero(image_pred)
-        image_pred = image_pred[non_zero_idxs]
-        image_pred = image_pred.reshape(-1, shape[-1])
-
-        bbox_attrs = image_pred[:, :5]
-        classes = image_pred[:, 5:]
-        classes = np.argmax(classes, axis=-1)
-
-        unique_classes = list(set(classes.reshape(-1)))
-
-        for cls in unique_classes:
-            cls_mask = classes == cls
-            cls_boxes = bbox_attrs[np.nonzero(cls_mask)]
-            cls_boxes = cls_boxes[cls_boxes[:, -1].argsort()[::-1]]
-            cls_scores = cls_boxes[:, -1]
-            cls_boxes = cls_boxes[:, :-1]
-
-            while len(cls_boxes) > 0:
-                box = cls_boxes[0]
-                score = cls_scores[0]
-                if cls not in result:
-                    result[cls] = []
-                result[cls].append((box, score))
-                cls_boxes = cls_boxes[1:]
-                cls_scores = cls_scores[1:]
-                ious = np.array([_iou(box, x) for x in cls_boxes])
-                iou_mask = ious < iou_threshold
-                cls_boxes = cls_boxes[np.nonzero(iou_mask)]
-                cls_scores = cls_scores[np.nonzero(iou_mask)]
-
-    return result
-
 
 def load_coco_names(file_name):
     names = {}
@@ -255,30 +104,6 @@ def load_coco_names(file_name):
             names[id] = name
     return names
 
-
-def draw_boxes(boxes, img, cls_names, detection_size, is_letter_box_image):
-    draw = ImageDraw.Draw(img)
-
-    for cls, bboxs in boxes.items():
-        color = tuple(np.random.randint(0, 256, 3))
-        for box, score in bboxs:
-            box = convert_to_original_size(box, np.array(detection_size),
-                                           np.array(img.size),
-                                           is_letter_box_image)
-            draw.rectangle(box, outline=color)
-            draw.text(box[:2], '{} {:.2f}%'.format(
-                cls_names[cls], score * 100), fill=color)
-
-
-def convert_to_original_size(box, size, original_size, is_letter_box_image):
-    if is_letter_box_image:
-        box = box.reshape(2, 2)
-        box[0, :] = letter_box_pos_to_original_pos(box[0, :], size, original_size)
-        box[1, :] = letter_box_pos_to_original_pos(box[1, :], size, original_size)
-    else:
-        ratio = original_size / size
-        box = box.reshape(2, 2) * ratio
-    return list(box.reshape(-1))
 
 
 def letter_box_image(image: Image.Image, output_height: int, output_width: int, fill_value)-> np.ndarray:
@@ -324,3 +149,39 @@ def letter_box_pos_to_original_pos(letter_pos, current_size, ori_image_size)-> n
     pad = pad.astype(np.int32)
     to_return_pos = (letter_pos - pad) / final_ratio
     return to_return_pos
+
+
+def draw_boxes(image, boxes, scores, labels, classes, detection_size,
+               font='./data/font/FiraMono-Medium.otf', show=True):
+    """
+    :param boxes, shape of  [num, 4]
+    :param scores, shape of [num, ]
+    :param labels, shape of [num, ]
+    :param image,
+    :param classes, the return list from the function `read_coco_names`
+    """
+    if boxes is None: return image
+    draw = ImageDraw.Draw(image)
+    # draw settings
+    hsv_tuples = [( x / len(classes), 0.9, 1.0) for x in range(len(classes))]
+    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+    colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
+    for i in range(len(labels)): # for each bounding box, do:
+        bbox, score, label = boxes.numpy()[i], scores.numpy()[i], classes[labels.numpy()[i]]
+        bbox_text = "%s %.2f" %(label, score)
+        print(bbox_text)
+        text_size = draw.textsize(bbox_text)
+        # convert_to_original_size
+        detection_size, original_size = np.array(detection_size), np.array(image.size)
+        ratio = original_size / detection_size
+        bbox = list((bbox.reshape(2,2) * ratio).reshape(-1))
+
+        #draw.rectangle(bbox, outline=colors[labels[i]], width=3)
+        draw.rectangle(bbox, outline=colors[labels[i]])
+        text_origin = bbox[:2]-np.array([0, text_size[1]])
+        draw.rectangle([tuple(text_origin), tuple(text_origin+text_size)], fill=colors[labels[i]])
+        # # draw bbox
+        draw.text(tuple(text_origin), bbox_text, fill=(0,0,0))
+
+    image.show() if show else None
+    return image
