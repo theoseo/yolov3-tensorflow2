@@ -1,9 +1,18 @@
 import tensorflow as tf
-import yolo_v3
+import numpy as np
+from model import create_model
 import logging
 import argparse
 
 from utils import load_coco_names, load_weights
+
+
+IMG_H, IMG_W = 416, 416
+
+yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
+                         (59, 119), (116, 90), (156, 198), (373, 326)],
+                        np.float32) 
+yolo_anchor_masks = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
 
 parser = argparse.ArgumentParser(description="YOLO-V3 weight convert")
 
@@ -15,18 +24,16 @@ parser.add_argument("--data_format", type=str, default="channels_last",
                     help="Data format: channels_first / channels_last.")    
 #parser.add_argument("--tiny", type=bool, default=False,
 #                    help="Use tiny version of YOLOv3.")    
-parser.add_argument("--tf2_weights", type=str, default="./tf2_weights/yolov3",
+parser.add_argument("--tf2_weights", type=str, default="./weights/yolov3.tf",
                     help="Tensorflow 2.0 Weights file.")    
 
 
 def main(argv=None):
 
     classes = load_coco_names(args.class_names)
-    inputs = tf.keras.Input(shape=(416,416,3))
-
-    yolov3 = yolo_v3.YoloV3(len(classes), data_format=args.data_format)
-    detections = yolov3(inputs, training=False)
-    load_ops = load_weights(yolov3, args.weights_file)  
+    
+    model = create_model(IMG_H, yolo_anchors, yolo_anchor_masks, len(classes))
+    load_ops = load_weights(model, args.weights_file)  
 
     """
     Saving Subclassed Models
@@ -37,7 +44,7 @@ def main(argv=None):
 
     https://medium.com/tensorflow/what-are-symbolic-and-imperative-apis-in-tensorflow-2-0-dfccecb01021
     """  
-    yolov3.save_weights(args.tf2_weights)
+    model.save_weights(args.tf2_weights)
 
 
 if __name__ == '__main__':
