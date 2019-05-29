@@ -1,6 +1,6 @@
 # YOLOv3 implementation in TensorFlow 2.0
 
-This implementation of YOLOv3 object detector in TensorFlow 2.0 (Keras) to study TensorFlow 2.0 and YOLOv3 and referenced great resources below. This is on going. Tested on Python 3.6, TensorFlow 2.0 alpha on Ubuntu 16.04.
+This implementation of YOLOv3 object detector in TensorFlow 2.0 (Keras). Referenced great resources below. Traning is on going. Tested on Python 3.6, TensorFlow 2.0 alpha on Ubuntu 16.04.
 
 ## Reference
 - [Darknet YOLO](https://pjreddie.com/darknet/yolo/)
